@@ -1,0 +1,62 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: containership-core
+  name: infrastructure-controller
+  labels:
+    containership.io/app: infrastructure-controller
+    containership.io/managed: "true"
+spec:
+  selector:
+    matchLabels:
+      containership.io/app: infrastructure-controller
+      containership.io/managed: "true"
+  template:
+    metadata:
+      labels:
+        name: infrastructure-controller
+        containership.io/app: infrastructure-controller
+        containership.io/managed: "true"
+    spec:
+      serviceAccountName: containership-admin
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      containers:
+      - name: infrastructure-controller
+        image: containership/infrastructure-controller
+        imagePullPolicy: Always
+        env:
+        - name: ETCD_ENDPOINT
+          value:
+        - name: CONTAINERSHIP_CLOUD_ENVIRONMENT
+          valueFrom:
+            secretKeyRef:
+              key: CONTAINERSHIP_CLOUD_ENVIRONMENT
+              name: containership-env-secret
+        volumeMounts:
+          - name: etcd-ca-certificate
+            mountPath: /etcd/ca.crt
+            readOnly: true
+          - name: etcd-client-certificate
+            mountPath: /etcd/client.crt
+            readOnly: true
+          - name: etcd-client-key
+            mountPath: /etcd/client.key
+            readOnly: true
+      volumes:
+      - name: etcd-ca-certificate
+        hostPath:
+          type: File
+          path: /etc/kubernetes/pki/etcd/ca.crt
+      - name: etcd-client-certificate
+        hostPath:
+          type: File
+          path: /etc/kubernetes/pki/etcd/healthcheck-client.crt
+      - name: etcd-client-key
+        hostPath:
+          type: File
+          path: /etc/kubernetes/pki/etcd/healthcheck-client.key
