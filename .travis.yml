@@ -1,0 +1,30 @@
+language: go
+
+go:
+  - 1.11.x
+
+before_install:
+  - curl https://glide.sh/get | sh
+  - go get -u golang.org/x/lint/golint
+
+install:
+  - glide install -v
+
+jobs:
+  include:
+    - stage: "Tests"
+      name: "Format Check"
+      script: make fmt-check
+    - script: make vet
+      name: "Vet"
+    - script: make lint
+      name: "Lint"
+    - script: make coverage
+      name: "Unit Test and Coverage"
+
+    - stage: "Build"
+      name: "Default Build"
+      script: make
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
