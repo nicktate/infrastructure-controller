@@ -6,6 +6,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -58,6 +60,12 @@ func NewEtcdRemovalController(kubeclientset kubernetes.Interface, kubeInformerFa
 	log.Infof("%s: Setting up event handlers", etcdRemovalControllerName)
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(_, obj interface{}) {
+			// We don't care about compare ResourceVersions because we're
+			// mainly using this handler for a periodic resync to check the
+			// entire system state
+			c.enqueueNode(obj)
+		},
 		DeleteFunc: c.enqueueNode,
 	})
 
@@ -142,7 +150,6 @@ func (c *EtcdRemovalController) processNextWorkItem() bool {
 // it up to a maximum number of times
 func (c *EtcdRemovalController) handleErr(err error, key interface{}) error {
 	if err == nil {
-		log.Debugf("%s: Successfully synced '%s'", etcdRemovalControllerName, key)
 		c.workqueue.Forget(key)
 		return nil
 	}
@@ -165,23 +172,49 @@ func (c *EtcdRemovalController) enqueueNode(obj interface{}) {
 		log.Error(err)
 		return
 	}
-	log.Debugf("%s: Adding %q to workqueue", etcdRemovalControllerName, key)
 	c.workqueue.AddRateLimited(key)
 }
 
-// syncHandler requests etcd to remove the member associated with a given node
-// TODO this is currently very edge-driven logic; it should really survey the
-// state of the system i.e. check that the node is gone
-func (c *EtcdRemovalController) syncHandler(key string) error {
-	log.Infof("%s: Requesting etcd to remove member %q", etcdRemovalControllerName, key)
-
+// syncHandler surveys the state of the system and determines if etcd has any
+// members that do not correspond to an existing node. If this is the case, it
+// requests that etcd removes that member.
+// The key is ignored for now because the entire state of the system is considered,
+// not only the single node that was synced.
+func (c *EtcdRemovalController) syncHandler(_ string) error {
 	client, err := etcd.NewClient(getEtcdEndpoint())
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	return etcd.RemoveMember(client, key)
+	nodeIDs, err := etcd.ListMembersByName(client)
+	if err != nil {
+		return errors.Wrap(err, "listing etcd members")
+	}
+
+	// Only remove up to one member per sync
+	// No particular reason for this; just makes debugging a bit easier and we
+	// periodically resync anyway
+	var memberToRemove string
+	for _, id := range nodeIDs {
+		nodes, err := c.nodeLister.List(getContainershipNodeIDLabelSelector(id))
+		if err != nil {
+			return errors.Wrapf(err, "listing node with node ID %q", id)
+		}
+
+		if len(nodes) == 0 {
+			log.Infof("Found etcd member named %q with no corresponding Kubernetes node", id)
+			memberToRemove = id
+			break
+		}
+	}
+
+	if memberToRemove != "" {
+		log.Infof("Requesting etcd member remove for member with name %q", memberToRemove)
+		return etcd.RemoveMemberByName(client, memberToRemove)
+	}
+
+	return nil
 }
 
 // nodeIDKeyFunc is a key function used to enqueue a node's ID instead of its name,
@@ -202,6 +235,17 @@ func nodeIDKeyFunc(obj interface{}) (string, error) {
 	}
 
 	return nodeID, nil
+}
+
+func getContainershipNodeIDLabelSelector(id string) labels.Selector {
+	selector := labels.NewSelector()
+	req, err := labels.NewRequirement(containershipNodeIDLabelKey, selection.Equals, []string{id})
+	if err != nil {
+		// Programming error - just explode
+		panic(err)
+	}
+
+	return selector.Add(*req)
 }
 
 func getEtcdEndpoint() string {

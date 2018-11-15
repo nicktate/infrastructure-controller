@@ -44,15 +44,33 @@ func NewClient(endpoint string) (*clientv3.Client, error) {
 	return client, nil
 }
 
-// RemoveMember removes the etcd member with the given name.
-func RemoveMember(client *clientv3.Client, name string) error {
-	// TODO consider using context.WithCancel() in the future
-	ctx := context.Background()
+// ListMembersByName returns the names of all etcd members or an error.
+func ListMembersByName(client *clientv3.Client) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	resp, err := client.MemberList(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "etcd client failed to list members")
+	}
+
+	names := make([]string, len(resp.Members))
+	for i, m := range resp.Members {
+		names[i] = m.Name
+	}
+
+	return names, nil
+}
+
+// RemoveMemberByName removes the etcd member with the given name.
+func RemoveMemberByName(client *clientv3.Client, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	resp, err := client.MemberList(ctx)
 	if err != nil {
 		return errors.Wrap(err, "etcd client failed to list members")
 	}
-	log.Debugf("etcd member list response: %+v", resp)
 
 	// Find the member ID of the member with the provided name
 	var memberID uint64
