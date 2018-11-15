@@ -2,17 +2,19 @@ FROM golang:1.10.1-alpine3.7 as builder
 
 # Add build tools
 RUN apk update && \
-    apk add --no-cache git gcc musl-dev glide
+    apk add --no-cache git gcc musl-dev curl
+
+RUN curl -fsSL -o /usr/local/bin/dep https://github.com/golang/dep/releases/download/v0.5.0/dep-linux-amd64 && \
+    chmod +x /usr/local/bin/dep
 
 ENV SRC_DIR=/go/src/github.com/containership/infrastructure-controller/
 
 WORKDIR /app
 
-# Glide install before adding rest of source so we can cache the resulting
-# vendor dir
-COPY glide.yaml glide.lock $SRC_DIR
+# Install deps before adding rest of source so we can cache the resulting vendor dir
+COPY Gopkg.toml Gopkg.lock $SRC_DIR
 RUN cd $SRC_DIR && \
-        glide install -v
+    dep ensure -vendor-only
 
 # Add the source code
 COPY . $SRC_DIR

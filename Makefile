@@ -2,7 +2,7 @@ SHELL=/bin/bash
 PROJECT_NAME := "infrastructure-controller"
 IMAGE_TAG ?= "latest"
 PKG := "github.com/containership/$(PROJECT_NAME)"
-PKG_LIST := $(shell glide novendor)
+PKG_LIST := $(shell go list ./...)
 GO_FILES := $(shell find . -type f -not -path './vendor/*' -name '*.go')
 
 .PHONY: all
