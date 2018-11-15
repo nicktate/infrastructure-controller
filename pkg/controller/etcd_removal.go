@@ -239,12 +239,7 @@ func nodeIDKeyFunc(obj interface{}) (string, error) {
 
 func getContainershipNodeIDLabelSelector(id string) labels.Selector {
 	selector := labels.NewSelector()
-	req, err := labels.NewRequirement(containershipNodeIDLabelKey, selection.Equals, []string{id})
-	if err != nil {
-		// Programming error - just explode
-		panic(err)
-	}
-
+	req, _ := labels.NewRequirement(containershipNodeIDLabelKey, selection.Equals, []string{id})
 	return selector.Add(*req)
 }
 
