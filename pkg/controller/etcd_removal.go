@@ -24,15 +24,10 @@ import (
 )
 
 const (
-	etcdRemovalControllerName = "EtcdRemovalController"
-
-	etcdRemovalDelayBetweenRetriesBetweenRetries = 30 * time.Second
-
-	maxEtcdRemovalControllerRetries = 10
-)
-
-const (
 	containershipNodeIDLabelKey = "containership.io/node-id"
+
+	delayBetweenRetries = 30 * time.Second
+	maxRetries          = 10
 )
 
 // EtcdRemovalController is a controller for removing etcd members upon a node
@@ -48,7 +43,7 @@ type EtcdRemovalController struct {
 
 // NewEtcdRemovalController returns a new etcd removal controller
 func NewEtcdRemovalController(kubeclientset kubernetes.Interface, kubeInformerFactory kubeinformers.SharedInformerFactory) *EtcdRemovalController {
-	rateLimiter := workqueue.NewItemExponentialFailureRateLimiter(etcdRemovalDelayBetweenRetriesBetweenRetries, etcdRemovalDelayBetweenRetriesBetweenRetries)
+	rateLimiter := workqueue.NewItemExponentialFailureRateLimiter(delayBetweenRetries, maxRetries)
 
 	c := &EtcdRemovalController{
 		kubeclientset: kubeclientset,
@@ -57,7 +52,7 @@ func NewEtcdRemovalController(kubeclientset kubernetes.Interface, kubeInformerFa
 
 	nodeInformer := kubeInformerFactory.Core().V1().Nodes()
 
-	log.Infof("%s: Setting up event handlers", etcdRemovalControllerName)
+	log.Info("Setting up event handlers")
 
 	nodeInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(_, obj interface{}) {
@@ -84,7 +79,7 @@ func (c *EtcdRemovalController) Run(numWorkers int, stopCh chan struct{}) {
 	defer c.workqueue.ShutDown()
 
 	// Start the informer factories to begin populating the informer caches
-	log.Info(etcdRemovalControllerName, ": Starting controller")
+	log.Info("Starting controller")
 
 	if ok := cache.WaitForCacheSync(stopCh, c.nodesSynced); !ok {
 		// If this channel is unable to wait for caches to sync we stop both
@@ -93,15 +88,15 @@ func (c *EtcdRemovalController) Run(numWorkers int, stopCh chan struct{}) {
 		log.Error("failed to wait for caches to sync")
 	}
 
-	log.Info(etcdRemovalControllerName, ": Starting workers")
+	log.Info("Starting workers")
 	// Launch numWorkers amount of workers to process resources
 	for i := 0; i < numWorkers; i++ {
 		go wait.Until(c.runWorker, time.Second, stopCh)
 	}
 
-	log.Info(etcdRemovalControllerName, ": Started workers")
+	log.Info("Started workers")
 	<-stopCh
-	log.Info(etcdRemovalControllerName, ": Shutting down workers")
+	log.Info("Shutting down workers")
 }
 
 // runWorker is a long-running function that will continually call the
@@ -154,13 +149,13 @@ func (c *EtcdRemovalController) handleErr(err error, key interface{}) error {
 		return nil
 	}
 
-	if c.workqueue.NumRequeues(key) < maxEtcdRemovalControllerRetries {
+	if c.workqueue.NumRequeues(key) < maxRetries {
 		c.workqueue.AddRateLimited(key)
 		return errors.Wrapf(err, "error syncing node %q (has been requeued %d times)", key, c.workqueue.NumRequeues(key))
 	}
 
 	c.workqueue.Forget(key)
-	log.Infof("%s: Dropping node %q out of the queue: %v", etcdRemovalControllerName, key, err)
+	log.Infof("Dropping node %q out of the queue: %v", key, err)
 	return err
 }
 
@@ -187,7 +182,7 @@ func (c *EtcdRemovalController) syncHandler(_ string) error {
 	}
 	defer client.Close()
 
-	nodeIDs, err := etcd.ListMembersByName(client)
+	nodeIDs, err := client.ListMembersByName()
 	if err != nil {
 		return errors.Wrap(err, "listing etcd members")
 	}
@@ -211,7 +206,7 @@ func (c *EtcdRemovalController) syncHandler(_ string) error {
 
 	if memberToRemove != "" {
 		log.Infof("Requesting etcd member remove for member with name %q", memberToRemove)
-		return etcd.RemoveMemberByName(client, memberToRemove)
+		return client.RemoveMemberByName(memberToRemove)
 	}
 
 	return nil

@@ -17,11 +17,16 @@ const (
 	caCertPath     = "/etcd/ca.crt"
 )
 
+// Client is a simplified etcd client
+type Client struct {
+	*clientv3.Client
+}
+
 // NewClient returns a new etcd client for the given endpoint, using the
 // well-known certificate and key files from disk. If the error returned is
 // nil, then the client is already connected (this is due to how the etcd
 // clientv3 API works).  The caller is responsible for calling client.Close().
-func NewClient(endpoint string) (*clientv3.Client, error) {
+func NewClient(endpoint string) (*Client, error) {
 	tlsInfo := transport.TLSInfo{
 		CertFile:      clientCertPath,
 		KeyFile:       clientKeyPath,
@@ -41,15 +46,15 @@ func NewClient(endpoint string) (*clientv3.Client, error) {
 		return nil, errors.Wrapf(err, "etcd client connect to endpoint %q failed", endpoint)
 	}
 
-	return client, nil
+	return &Client{client}, nil
 }
 
 // ListMembersByName returns the names of all etcd members or an error.
-func ListMembersByName(client *clientv3.Client) ([]string, error) {
+func (c *Client) ListMembersByName() ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	resp, err := client.MemberList(ctx)
+	resp, err := c.MemberList(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "etcd client failed to list members")
 	}
@@ -63,11 +68,11 @@ func ListMembersByName(client *clientv3.Client) ([]string, error) {
 }
 
 // RemoveMemberByName removes the etcd member with the given name.
-func RemoveMemberByName(client *clientv3.Client, name string) error {
+func (c *Client) RemoveMemberByName(name string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	resp, err := client.MemberList(ctx)
+	resp, err := c.MemberList(ctx)
 	if err != nil {
 		return errors.Wrap(err, "etcd client failed to list members")
 	}
@@ -85,7 +90,7 @@ func RemoveMemberByName(client *clientv3.Client, name string) error {
 		return errors.Errorf("cannot remove nonexistent etcd member %q", name)
 	}
 
-	_, err = client.MemberRemove(ctx, memberID)
+	_, err = c.MemberRemove(ctx, memberID)
 	if err != nil {
 		return errors.Wrapf(err, "etcd client failed to remove member %q", name)
 	}
