@@ -3,10 +3,6 @@ package controller
 import (
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -20,15 +16,13 @@ import (
 
 	"github.com/containership/cluster-manager/pkg/log"
 	"github.com/containership/csctl/cloud"
-	provisiontypes "github.com/containership/csctl/cloud/provision/types"
-	"github.com/containership/csctl/cloud/rest"
+
 	"github.com/containership/infrastructure-controller/pkg/env"
 	"github.com/containership/infrastructure-controller/pkg/etcd"
+	"github.com/containership/infrastructure-controller/pkg/node"
 )
 
 const (
-	containershipNodeIDLabelKey = "containership.io/node-id"
-
 	delayBetweenRequeues = 30 * time.Second
 
 	// Don't requeue in order to avoid excessive requests to cloud for things
@@ -173,7 +167,7 @@ func (c *EtcdRemovalController) handleErr(err error, key interface{}) error {
 func (c *EtcdRemovalController) enqueueNode(obj interface{}) {
 	var key string
 	var err error
-	if key, err = nodeIDKeyFunc(obj); err != nil {
+	if key, err = node.ContainershipNodeIDKeyFunc(obj); err != nil {
 		log.Error(err)
 		return
 	}
@@ -202,7 +196,7 @@ func (c *EtcdRemovalController) syncHandler(_ string) error {
 	// periodically resync anyway
 	var memberToRemove string
 	for _, id := range nodeIDs {
-		nodes, err := c.nodeLister.List(getContainershipNodeIDLabelSelector(id))
+		nodes, err := c.nodeLister.List(node.ContainershipNodeIDLabelSelector(id))
 		if err != nil {
 			return errors.Wrapf(err, "listing node with node ID %q", id)
 		}
@@ -219,7 +213,7 @@ func (c *EtcdRemovalController) syncHandler(_ string) error {
 		return nil
 	}
 
-	exists, err := c.nodeExistsInCloud(memberToRemove)
+	exists, err := node.ExistsInCloud(c.cloudclientset, memberToRemove)
 	if err != nil {
 		return errors.Wrapf(err, "checking if node %q exists in cloud", memberToRemove)
 	}
@@ -234,86 +228,4 @@ func (c *EtcdRemovalController) syncHandler(_ string) error {
 
 	log.Infof("Requesting etcd member remove for member with name %q", memberToRemove)
 	return client.RemoveMemberByName(memberToRemove)
-}
-
-func (c *EtcdRemovalController) nodeExistsInCloud(id string) (bool, error) {
-	log.Debug("Getting all etcd node pools")
-	etcdPools, err := c.getNodePoolsRunningEtcd()
-	if err != nil {
-		return false, err
-	}
-
-	for _, np := range etcdPools {
-		log.Debugf("Checking for existence of node %q in etcd node pool %q", id, string(np.ID))
-		exists, err := c.nodeExistsInPool(string(np.ID), id)
-		if err != nil {
-			return false, err
-		}
-
-		if exists {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
-func (c *EtcdRemovalController) getNodePoolsRunningEtcd() ([]provisiontypes.NodePool, error) {
-	nodePools, err := c.cloudclientset.Provision().NodePools(env.OrganizationID(), env.ClusterID()).List()
-	if err != nil {
-		return nil, errors.Wrap(err, "listing node pools")
-	}
-
-	etcdPools := make([]provisiontypes.NodePool, 0)
-	for _, np := range nodePools {
-		if np.Etcd != nil && *np.Etcd {
-			etcdPools = append(etcdPools, np)
-		}
-	}
-
-	return etcdPools, nil
-}
-
-func (c *EtcdRemovalController) nodeExistsInPool(nodePoolID, nodeID string) (bool, error) {
-	_, err := c.cloudclientset.Provision().Nodes(env.OrganizationID(), env.ClusterID(), nodePoolID).Get(nodeID)
-	if err == nil {
-		// Found it
-		return true, nil
-	}
-
-	switch err := err.(type) {
-	case rest.HTTPError:
-		if err.IsNotFound() {
-			return false, nil
-		}
-	}
-
-	// Some other error occurred
-	return false, errors.Wrapf(err, "attempting to get node %q from pool %q", nodeID, nodePoolID)
-}
-
-// nodeIDKeyFunc is a key function used to enqueue a node's ID instead of its name,
-// since this is what we care about from etcd's perspective.
-// Since only one property is used (no e.g. namespace as would be typical), no
-// corresponding split function is needed.
-func nodeIDKeyFunc(obj interface{}) (string, error) {
-	// This is a private function intended to only be used with Node objects, so let's
-	// treat it as a Node directly and avoid the meta stuff
-	node, ok := obj.(*corev1.Node)
-	if !ok {
-		return "", errors.Errorf("cannot use node ID key function on non-Node object")
-	}
-
-	nodeID, ok := node.Labels[containershipNodeIDLabelKey]
-	if !ok {
-		return "", errors.Errorf("node %q does not have a label with key %q", node.Name, containershipNodeIDLabelKey)
-	}
-
-	return nodeID, nil
-}
-
-func getContainershipNodeIDLabelSelector(id string) labels.Selector {
-	selector := labels.NewSelector()
-	req, _ := labels.NewRequirement(containershipNodeIDLabelKey, selection.Equals, []string{id})
-	return selector.Add(*req)
 }
