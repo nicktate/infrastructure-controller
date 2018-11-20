@@ -25,6 +25,11 @@ func main() {
 	log.Infof("Version: %s", buildinfo.String())
 	log.Infof("Go Version: %s", runtime.Version())
 
+	if err := env.Init(); err != nil {
+		log.Fatalf("Error initialization environment: %v", err)
+	}
+	env.Dump(os.Stdout)
+
 	// We don't have any of our own flags to parse, but k8s packages want to
 	// use glog and we have to pass flags to that to configure it to behave
 	// in a sane way.
