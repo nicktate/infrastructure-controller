@@ -14,8 +14,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/containership/cluster-manager/pkg/log"
+	"github.com/containership/csctl/cloud"
 	"github.com/containership/infrastructure-controller/pkg/buildinfo"
 	"github.com/containership/infrastructure-controller/pkg/controller"
+	"github.com/containership/infrastructure-controller/pkg/env"
 )
 
 func main() {
@@ -33,15 +35,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	clientset, err := kubernetes.NewForConfig(config)
+	kubeclientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		log.Fatalf("Failed to create Kubernetes clientset: %+v", err)
 	}
 
-	kubeInformerFactory := informers.NewSharedInformerFactory(clientset, 15*time.Second)
+	cloudclientset, err := cloud.New(cloud.Config{
+		Token:            env.ClusterToken(),
+		ProvisionBaseURL: env.ProvisionBaseURL(),
+	})
+
+	kubeInformerFactory := informers.NewSharedInformerFactory(kubeclientset, 30*time.Second)
 
 	etcdRemovalController := controller.NewEtcdRemovalController(
-		clientset, kubeInformerFactory)
+		kubeclientset, cloudclientset, kubeInformerFactory)
 
 	stopCh := make(chan struct{})
 	kubeInformerFactory.Start(stopCh)

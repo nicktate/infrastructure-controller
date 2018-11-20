@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"os"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -20,20 +19,28 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/containership/cluster-manager/pkg/log"
+	"github.com/containership/csctl/cloud"
+	provisiontypes "github.com/containership/csctl/cloud/provision/types"
+	"github.com/containership/csctl/cloud/rest"
+	"github.com/containership/infrastructure-controller/pkg/env"
 	"github.com/containership/infrastructure-controller/pkg/etcd"
 )
 
 const (
 	containershipNodeIDLabelKey = "containership.io/node-id"
 
-	delayBetweenRetries = 30 * time.Second
-	maxRetries          = 10
+	delayBetweenRequeues = 30 * time.Second
+
+	// Don't requeue in order to avoid excessive requests to cloud for things
+	// that we're going to naturally retry on the sync interval anyway
+	maxRequeues = 0
 )
 
 // EtcdRemovalController is a controller for removing etcd members upon a node
 // being deleted from the cluster.
 type EtcdRemovalController struct {
-	kubeclientset kubernetes.Interface
+	kubeclientset  kubernetes.Interface
+	cloudclientset cloud.Interface
 
 	nodeLister  corelistersv1.NodeLister
 	nodesSynced cache.InformerSynced
@@ -42,12 +49,15 @@ type EtcdRemovalController struct {
 }
 
 // NewEtcdRemovalController returns a new etcd removal controller
-func NewEtcdRemovalController(kubeclientset kubernetes.Interface, kubeInformerFactory kubeinformers.SharedInformerFactory) *EtcdRemovalController {
-	rateLimiter := workqueue.NewItemExponentialFailureRateLimiter(delayBetweenRetries, maxRetries)
+func NewEtcdRemovalController(kubeclientset kubernetes.Interface,
+	cloudclientset cloud.Interface,
+	kubeInformerFactory kubeinformers.SharedInformerFactory) *EtcdRemovalController {
+	rateLimiter := workqueue.NewItemExponentialFailureRateLimiter(delayBetweenRequeues, maxRequeues)
 
 	c := &EtcdRemovalController{
-		kubeclientset: kubeclientset,
-		workqueue:     workqueue.NewNamedRateLimitingQueue(rateLimiter, "EtcdRemoval"),
+		kubeclientset:  kubeclientset,
+		cloudclientset: cloudclientset,
+		workqueue:      workqueue.NewNamedRateLimitingQueue(rateLimiter, "EtcdRemoval"),
 	}
 
 	nodeInformer := kubeInformerFactory.Core().V1().Nodes()
@@ -149,7 +159,7 @@ func (c *EtcdRemovalController) handleErr(err error, key interface{}) error {
 		return nil
 	}
 
-	if c.workqueue.NumRequeues(key) < maxRetries {
+	if c.workqueue.NumRequeues(key) < maxRequeues {
 		c.workqueue.AddRateLimited(key)
 		return errors.Wrapf(err, "error syncing node %q (has been requeued %d times)", key, c.workqueue.NumRequeues(key))
 	}
@@ -176,7 +186,7 @@ func (c *EtcdRemovalController) enqueueNode(obj interface{}) {
 // The key is ignored for now because the entire state of the system is considered,
 // not only the single node that was synced.
 func (c *EtcdRemovalController) syncHandler(_ string) error {
-	client, err := etcd.NewClient(getEtcdEndpoint())
+	client, err := etcd.NewClient(env.EtcdEndpoint())
 	if err != nil {
 		return err
 	}
@@ -204,12 +214,82 @@ func (c *EtcdRemovalController) syncHandler(_ string) error {
 		}
 	}
 
-	if memberToRemove != "" {
-		log.Infof("Requesting etcd member remove for member with name %q", memberToRemove)
-		return client.RemoveMemberByName(memberToRemove)
+	if memberToRemove == "" {
+		// Nothing to do
+		return nil
 	}
 
-	return nil
+	exists, err := c.nodeExistsInCloud(memberToRemove)
+	if err != nil {
+		return errors.Wrapf(err, "checking if node %q exists in cloud", memberToRemove)
+	}
+
+	if exists {
+		// Cloud knows about this node, so don't remove it from etcd. This can happen, for example,
+		// if the master pool is scaling and the new etcd member joined but we're still waiting for
+		// the new Kubernetes master node to join the cluster.
+		log.Infof("Missing Kubernetes node %q exists in cloud, will skip etcd member remove", memberToRemove)
+		return nil
+	}
+
+	log.Infof("Requesting etcd member remove for member with name %q", memberToRemove)
+	return client.RemoveMemberByName(memberToRemove)
+}
+
+func (c *EtcdRemovalController) nodeExistsInCloud(id string) (bool, error) {
+	log.Debug("Getting all etcd node pools")
+	etcdPools, err := c.getNodePoolsRunningEtcd()
+	if err != nil {
+		return false, err
+	}
+
+	for _, np := range etcdPools {
+		log.Debugf("Checking for existence of node %q in etcd node pool %q", id, string(np.ID))
+		exists, err := c.nodeExistsInPool(string(np.ID), id)
+		if err != nil {
+			return false, err
+		}
+
+		if exists {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func (c *EtcdRemovalController) getNodePoolsRunningEtcd() ([]provisiontypes.NodePool, error) {
+	nodePools, err := c.cloudclientset.Provision().NodePools(env.OrganizationID(), env.ClusterID()).List()
+	if err != nil {
+		return nil, errors.Wrap(err, "listing node pools")
+	}
+
+	etcdPools := make([]provisiontypes.NodePool, 0)
+	for _, np := range nodePools {
+		if np.Etcd != nil && *np.Etcd {
+			etcdPools = append(etcdPools, np)
+		}
+	}
+
+	return etcdPools, nil
+}
+
+func (c *EtcdRemovalController) nodeExistsInPool(nodePoolID, nodeID string) (bool, error) {
+	_, err := c.cloudclientset.Provision().Nodes(env.OrganizationID(), env.ClusterID(), nodePoolID).Get(nodeID)
+	if err == nil {
+		// Found it
+		return true, nil
+	}
+
+	switch err := err.(type) {
+	case rest.HTTPError:
+		if err.IsNotFound() {
+			return false, nil
+		}
+	}
+
+	// Some other error occurred
+	return false, errors.Wrapf(err, "attempting to get node %q from pool %q", nodeID, nodePoolID)
 }
 
 // nodeIDKeyFunc is a key function used to enqueue a node's ID instead of its name,
@@ -236,8 +316,4 @@ func getContainershipNodeIDLabelSelector(id string) labels.Selector {
 	selector := labels.NewSelector()
 	req, _ := labels.NewRequirement(containershipNodeIDLabelKey, selection.Equals, []string{id})
 	return selector.Add(*req)
-}
-
-func getEtcdEndpoint() string {
-	return os.Getenv("ETCD_ENDPOINT")
 }

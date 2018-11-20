@@ -32,10 +32,30 @@ spec:
         env:
         - name: ETCD_ENDPOINT
           value:
+        - name: CONTAINERSHIP_CLOUD_CLUSTER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: CONTAINERSHIP_CLOUD_CLUSTER_API_KEY
+              name: containership-env-secret
+        - name: CONTAINERSHIP_CLOUD_ORGANIZATION_ID
+          valueFrom:
+            secretKeyRef:
+              key: CONTAINERSHIP_CLOUD_ORGANIZATION_ID
+              name: containership-env-secret
+        - name: CONTAINERSHIP_CLOUD_CLUSTER_ID
+          valueFrom:
+            secretKeyRef:
+              key: CONTAINERSHIP_CLOUD_CLUSTER_ID
+              name: containership-env-secret
         - name: CONTAINERSHIP_CLOUD_ENVIRONMENT
           valueFrom:
             secretKeyRef:
               key: CONTAINERSHIP_CLOUD_ENVIRONMENT
+              name: containership-env-secret
+        - name: CONTAINERSHIP_CLOUD_PROVISION_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              key: CONTAINERSHIP_CLOUD_PROVISION_BASE_URL
               name: containership-env-secret
         volumeMounts:
           - name: etcd-ca-certificate
