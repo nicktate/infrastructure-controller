@@ -1,0 +1,20 @@
+# git
+.git
+.gitignore
+
+# go vendoring
+/vendor
+
+# Docker
+.dockerignore
+Dockerfile*
+
+# CI
+.travis.yml
+
+# misc
+*.log
+*.conf
+/deploy
+LICENSE
+README*

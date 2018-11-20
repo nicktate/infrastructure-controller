@@ -42,9 +42,13 @@ msan: ## Run memory sanitizer (only works on linux/amd64)
 help: ## Display this help screen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: dep
+dep:
+	@dep ensure
+
 .PHONY: build
 build: ## Build the controller in Docker
-	docker image build -t containership/$(PROJECT_NAME):$(IMAGE_TAG) . \
+	@docker image build -t containership/$(PROJECT_NAME):$(IMAGE_TAG) . \
 		--build-arg GIT_DESCRIBE=`git describe --dirty` \
 		--build-arg GIT_COMMIT=`git rev-parse --short HEAD` \
 
