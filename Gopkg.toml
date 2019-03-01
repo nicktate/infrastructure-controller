@@ -26,6 +26,10 @@
   name = "github.com/containership/csctl"
   revision = "5ff4321805e7ac66afb8baafee6bafb10c63ec83"
 
+[[constraint]]
+  name = "k8s.io/klog"
+  version = "0.2.0"
+
 [prune]
   go-tests = true
   unused-packages = true
