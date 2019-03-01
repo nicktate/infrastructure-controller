@@ -12,6 +12,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/klog"
 
 	"github.com/containership/cluster-manager/pkg/log"
 	"github.com/containership/csctl/cloud"
@@ -31,8 +32,10 @@ func main() {
 	env.Dump(os.Stdout)
 
 	// We don't have any of our own flags to parse, but k8s packages want to
-	// use glog and we have to pass flags to that to configure it to behave
+	// use klog and we have to pass flags to that to configure it to behave
 	// in a sane way.
+	klog.InitFlags(nil)
+	flag.Set("logtostderr", "true")
 	flag.Parse()
 
 	config, err := determineConfig()
