@@ -34,18 +34,20 @@
   version = "v5.0.1"
 
 [[projects]]
-  digest = "1:501a157a8862d5c27794e7d47b772350b3a99c4d8e55ed0bbc54e839058e7058"
+  digest = "1:e36ded78771558bdebc96881d7c64918dc100507f837d50d7d4caf14feef14ff"
   name = "github.com/containership/csctl"
   packages = [
     "cloud",
     "cloud/api",
     "cloud/api/types",
+    "cloud/auth",
+    "cloud/auth/types",
     "cloud/provision",
     "cloud/provision/types",
     "cloud/rest",
   ]
   pruneopts = "UT"
-  revision = "5ff4321805e7ac66afb8baafee6bafb10c63ec83"
+  revision = "8dac9bd6b4f418bb97b0d16ecbf3b420882078d6"
 
 [[projects]]
   digest = "1:b7e8c5fa66ebd2e6083cd4a6cc515f6d3c651fd04ad18a8276444bbcb172c583"
@@ -798,8 +800,9 @@
     "github.com/containership/cluster-manager/pkg/log",
     "github.com/containership/csctl/cloud",
     "github.com/containership/csctl/cloud/provision/types",
-    "github.com/containership/csctl/cloud/rest",
     "github.com/coreos/etcd/clientv3",
+    "github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes",
+    "github.com/coreos/etcd/etcdserver/etcdserverpb",
     "github.com/coreos/etcd/pkg/transport",
     "github.com/davecgh/go-spew/spew",
     "github.com/pkg/errors",
