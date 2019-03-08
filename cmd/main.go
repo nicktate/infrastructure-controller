@@ -27,7 +27,7 @@ func main() {
 	log.Infof("Go Version: %s", runtime.Version())
 
 	if err := env.Init(); err != nil {
-		log.Fatalf("Error initialization environment: %v", err)
+		log.Fatalf("Error initializing environment: %v", err)
 	}
 	env.Dump(os.Stdout)
 

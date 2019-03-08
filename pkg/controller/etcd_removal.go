@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"net/url"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/runtime"
@@ -12,10 +13,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
+	"github.com/coreos/etcd/etcdserver/etcdserverpb"
+
 	"github.com/pkg/errors"
 
 	"github.com/containership/cluster-manager/pkg/log"
 	"github.com/containership/csctl/cloud"
+	"github.com/containership/csctl/cloud/provision/types"
 
 	"github.com/containership/infrastructure-controller/pkg/env"
 	"github.com/containership/infrastructure-controller/pkg/etcd"
@@ -180,52 +184,93 @@ func (c *EtcdRemovalController) enqueueNode(obj interface{}) {
 // The key is ignored for now because the entire state of the system is considered,
 // not only the single node that was synced.
 func (c *EtcdRemovalController) syncHandler(_ string) error {
-	client, err := etcd.NewClient(env.EtcdEndpoint())
+	client, err := etcd.NewClient([]string{env.EtcdEndpoint()})
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	nodeIDs, err := client.ListMembersByName()
+	members, err := client.ListMembers()
 	if err != nil {
 		return errors.Wrap(err, "listing etcd members")
 	}
 
-	// Only remove up to one member per sync
-	// No particular reason for this; just makes debugging a bit easier and we
-	// periodically resync anyway
-	var memberToRemove string
-	for _, id := range nodeIDs {
-		nodes, err := c.nodeLister.List(node.ContainershipNodeIDLabelSelector(id))
-		if err != nil {
-			return errors.Wrapf(err, "listing node with node ID %q", id)
-		}
+	etcdNodes, err := getNodesRunningEtcd(c.cloudclientset)
+	if err != nil {
+		return errors.Wrap(err, "listing nodes running etcd")
+	}
 
-		if len(nodes) == 0 {
-			log.Infof("Found etcd member named %q with no corresponding Kubernetes node", id)
-			memberToRemove = id
+	var candidate *etcdserverpb.Member
+
+	for _, member := range members {
+		if !etcdMemberHasCloudNodeCounterpart(member, etcdNodes) {
+			// Cloud doesn't know about this node
+			candidate = member
 			break
 		}
 	}
 
-	if memberToRemove == "" {
+	if candidate == nil {
 		// Nothing to do
 		return nil
 	}
 
-	exists, err := node.ExistsInCloud(c.cloudclientset, memberToRemove)
-	if err != nil {
-		return errors.Wrapf(err, "checking if node %q exists in cloud", memberToRemove)
-	}
-
-	if exists {
-		// Cloud knows about this node, so don't remove it from etcd. This can happen, for example,
-		// if the master pool is scaling and the new etcd member joined but we're still waiting for
-		// the new Kubernetes master node to join the cluster.
-		log.Infof("Missing Kubernetes node %q exists in cloud, will skip etcd member remove", memberToRemove)
+	if etcd.MemberIsHealthy(candidate) {
+		// If we didn't find a candidate member to remove or that member is
+		// still healthy, don't do anything. We're assuming that the member
+		// will eventually become unhealthy if it doesn't live on a node that
+		// exists in cloud, because that node will be deleted along with the
+		// etcd static pod running on it.
+		log.Debugf("etcd member %q is still healthy - deferring removal", candidate.Name)
 		return nil
 	}
 
-	log.Infof("Requesting etcd member remove for member with name %q", memberToRemove)
-	return client.RemoveMemberByName(memberToRemove)
+	log.Infof("Requesting etcd member remove for member with name %q", candidate.Name)
+	return client.RemoveMemberByName(candidate.Name)
+}
+
+// determine if the given etcd member corresponds to one of the given nodes by
+// comparing the internal IPs of the nodes to the member's peer URLs
+func etcdMemberHasCloudNodeCounterpart(member *etcdserverpb.Member, nodes []types.Node) bool {
+	if member == nil {
+		return false
+	}
+
+	for _, addr := range member.PeerURLs {
+		// Ignore errors - an etcd member wouldn't be able to come up with
+		// a malformed peer URL
+		u, _ := url.Parse(addr)
+
+		for _, node := range nodes {
+			if node.Addresses != nil && node.Addresses.InternalIP == u.Hostname() {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// get all nodes that are running etcd from Containership
+func getNodesRunningEtcd(clientset cloud.Interface) ([]types.Node, error) {
+	orgID := env.OrganizationID()
+	clusterID := env.ClusterID()
+	nodePools, err := clientset.Provision().NodePools(orgID, clusterID).List()
+	if err != nil {
+		return nil, errors.Wrap(err, "listing node pools")
+	}
+
+	nodes := make([]types.Node, 0)
+	for _, np := range nodePools {
+		if np.Etcd != nil && *np.Etcd {
+			nodesInThisPool, err := clientset.Provision().Nodes(orgID, clusterID, string(np.ID)).List()
+			if err != nil {
+				return nil, errors.Wrapf(err, "listing nodes in node pool %q", np.ID)
+			}
+
+			nodes = append(nodes, nodesInThisPool...)
+		}
+	}
+
+	return nodes, nil
 }
