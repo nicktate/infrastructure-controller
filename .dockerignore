@@ -1,6 +1,7 @@
 # git
 .git
 .gitignore
+.github
 
 # go vendoring
 /vendor
@@ -10,7 +11,8 @@
 Dockerfile*
 
 # CI
-.travis.yml
+.circleci
+.codecov.yml
 
 # misc
 *.log

@@ -1,7 +1,7 @@
 SHELL=/bin/bash
-PROJECT_NAME := "infrastructure-controller"
+PROJECT_NAME ?= "infrastructure-controller"
+IMAGE_NAME ?= "containership/$(PROJECT_NAME)"
 IMAGE_TAG ?= "latest"
-PKG := "github.com/containership/$(PROJECT_NAME)"
 PKG_LIST := $(shell go list ./...)
 GO_FILES := $(shell find . -type f -not -path './vendor/*' -name '*.go')
 
@@ -53,7 +53,7 @@ dep:
 
 .PHONY: build
 build: ## Build the controller in Docker
-	@docker image build -t containership/$(PROJECT_NAME):$(IMAGE_TAG) . \
+	@docker image build -t $(IMAGE_NAME):$(IMAGE_TAG) . \
 		--build-arg GIT_DESCRIBE=`git describe --dirty` \
 		--build-arg GIT_COMMIT=`git rev-parse --short HEAD` \
 
