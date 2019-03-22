@@ -48,7 +48,7 @@ jobs:
       - setup_remote_docker
       - run: |
             export IMAGE_NAME=$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME
-            export IMAGE_TAG=`if [ -n “$CIRCLE_TAG” ]; then echo latest; else echo $CIRCLE_TAG; fi`
+            export IMAGE_TAG=`if [ -z $CIRCLE_TAG ]; then echo latest; else echo $CIRCLE_TAG; fi`
             echo "Building Docker image $IMAGE_NAME:$IMAGE_TAG"
             make
             echo $DOCKER_PASSWORD | docker login --username $DOCKER_USERNAME --password-stdin
@@ -76,5 +76,22 @@ workflows:
             branches:
               only:
                 - master
+
+  release:
+    jobs:
+      - test:
+          filters:  # filters are required to match build-and-publish job since it requires this one
             tags:
               only: /^v.*/
+            branches:
+              ignore: /.*/
+
+      - build-and-publish:
+          context: containershipbot
+          requires:
+            - test
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
