@@ -2,6 +2,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/containership/infrastructure-controller)](https://goreportcard.com/report/github.com/containership/infrastructure-controller)
 [![codecov](https://codecov.io/gh/containership/infrastructure-controller/branch/master/graph/badge.svg)](https://codecov.io/gh/containership/infrastructure-controller)
 
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v1.4%20adopted-ff69b4.svg)](code-of-conduct.md)
+
 # Containership Cloud Infrastructure Controller
 
 The infrastructure controller is a simple controller for augmenting the functionality of Containership Kubernetes Engine (CKE) clusters in ways that are specific to infrastructure management.
