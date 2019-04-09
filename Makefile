@@ -5,6 +5,10 @@ IMAGE_TAG ?= "latest"
 PKG_LIST := $(shell go list ./...)
 GO_FILES := $(shell find . -type f -not -path './vendor/*' -name '*.go')
 
+# Ensure go module support is enabled, i.e.
+# This is required in case this repo lives in the $GOPATH/src tree.
+export GO111MODULE=on
+
 .PHONY: all
 all: build ## (default) Build
 
@@ -46,10 +50,6 @@ msan: ## Run memory sanitizer (only works on linux/amd64)
 .PHONY: help
 help: ## Display this help screen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
-
-.PHONY: dep
-dep:
-	@dep ensure
 
 .PHONY: build
 build: ## Build the controller in Docker
