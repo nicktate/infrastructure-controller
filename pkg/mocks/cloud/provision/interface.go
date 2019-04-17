@@ -43,6 +43,22 @@ func (_m *Interface) CKEClusters(organizationID string) provision.CKEClusterInte
 	return r0
 }
 
+// NodePoolLabels provides a mock function with given fields: organizationID, clusterID, labelPoolID
+func (_m *Interface) NodePoolLabels(organizationID string, clusterID string, labelPoolID string) provision.NodePoolLabelInterface {
+	ret := _m.Called(organizationID, clusterID, labelPoolID)
+
+	var r0 provision.NodePoolLabelInterface
+	if rf, ok := ret.Get(0).(func(string, string, string) provision.NodePoolLabelInterface); ok {
+		r0 = rf(organizationID, clusterID, labelPoolID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(provision.NodePoolLabelInterface)
+		}
+	}
+
+	return r0
+}
+
 // NodePools provides a mock function with given fields: organizationID, clusterID
 func (_m *Interface) NodePools(organizationID string, clusterID string) provision.NodePoolInterface {
 	ret := _m.Called(organizationID, clusterID)

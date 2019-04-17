@@ -10,8 +10,8 @@ import (
 
 	"github.com/containership/csctl/cloud/provision/types"
 
-	"github.com/containership/infrastructure-controller/pkg/mocks"
-	"github.com/containership/infrastructure-controller/pkg/mocks/provision"
+	cloudmocks "github.com/containership/infrastructure-controller/pkg/mocks/cloud"
+	provisionmocks "github.com/containership/infrastructure-controller/pkg/mocks/cloud/provision"
 )
 
 func strptr(s string) *string {
@@ -69,10 +69,10 @@ func (e HTTPError) Error() string {
 }
 
 func TestExists(t *testing.T) {
-	cloudclientset := &mocks.Interface{}
-	provisionInterface := &provision.Interface{}
-	nodes := &provision.NodeInterface{}
-	nodepools := &provision.NodePoolInterface{}
+	cloudclientset := &cloudmocks.Interface{}
+	provisionInterface := &provisionmocks.Interface{}
+	nodes := &provisionmocks.NodeInterface{}
+	nodepools := &provisionmocks.NodePoolInterface{}
 
 	// set up cloud provision mock
 	cloudclientset.On("Provision").Return(provisionInterface)
