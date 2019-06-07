@@ -221,7 +221,7 @@ func (c *NodeRemovalController) syncHandler(key string) error {
 		return nil
 	}
 
-	err = c.kubeclientset.Core().Nodes().Delete(name, &metav1.DeleteOptions{})
+	err = c.kubeclientset.CoreV1().Nodes().Delete(name, &metav1.DeleteOptions{})
 	if err != nil {
 		return errors.Wrap(err, "deleting node")
 	}
