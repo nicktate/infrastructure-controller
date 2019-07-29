@@ -11,13 +11,13 @@ type NodePoolInterface struct {
 	mock.Mock
 }
 
-// Create provides a mock function with given fields: _a0
-func (_m *NodePoolInterface) Create(_a0 *types.NodePool) (*types.NodePool, error) {
-	ret := _m.Called(_a0)
+// Create provides a mock function with given fields: req
+func (_m *NodePoolInterface) Create(req *types.NodePoolDigitalOceanCreateRequest) (*types.NodePool, error) {
+	ret := _m.Called(req)
 
 	var r0 *types.NodePool
-	if rf, ok := ret.Get(0).(func(*types.NodePool) *types.NodePool); ok {
-		r0 = rf(_a0)
+	if rf, ok := ret.Get(0).(func(*types.NodePoolDigitalOceanCreateRequest) *types.NodePool); ok {
+		r0 = rf(req)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*types.NodePool)
@@ -25,8 +25,8 @@ func (_m *NodePoolInterface) Create(_a0 *types.NodePool) (*types.NodePool, error
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(*types.NodePool) error); ok {
-		r1 = rf(_a0)
+	if rf, ok := ret.Get(1).(func(*types.NodePoolDigitalOceanCreateRequest) error); ok {
+		r1 = rf(req)
 	} else {
 		r1 = ret.Error(1)
 	}
